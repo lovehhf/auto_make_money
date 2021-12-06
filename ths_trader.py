@@ -2,23 +2,20 @@
 """
 同花顺通用wrapper 来自easytrader
 link： https://github.com/shidenggui/easytrader
-
 """
-import abc
-import functools
-import logging
-import time
 
+import abc
+import time
+import re
+import functools
+import pyautogui
 import pywinauto
-from pywinauto import findwindows, timings
+from pywinauto import win32defines, findwindows, timings
+from pywinauto.win32functions import SetForegroundWindow, ShowWindow
 
 import config
 from utils import logger
-import re
 from typing import Optional
-
-from pywinauto import win32defines
-from pywinauto.win32functions import SetForegroundWindow, ShowWindow
 
 
 class TradeError(IOError):
@@ -162,6 +159,9 @@ class THSTrader(BaseTrader):
         self._init_toolbar()
 
     def _close_prompt_windows(self):
+        """
+        关闭提示窗口
+        """
         self.wait(1)
         for window in self._app.windows(class_name="#32770", visible_only=True):
             title = window.window_text()
@@ -175,61 +175,134 @@ class THSTrader(BaseTrader):
         time.sleep(seconds)
 
     def _init_toolbar(self):
+        """
+        初始化工具栏
+        ToolbarWindow32 退出，登录，锁屏等操作所在工具栏的类名
+        """
         self._toolbar = self._main.child_window(class_name="ToolbarWindow32")
+
+    def get_account_name(self):
+        """
+        获取账户名
+        """
+        ret = ""
+
+        try:
+            dialog = self._toolbar.child_window(control_id=0x912, class_name="ComboBox")
+            ret = dialog.window_text()
+        except Exception as e:
+            logger.error("get_account_name failed, err: %s" % e)
+
+        return ret
+
+
+    def buy_bonds(self, bonds):
+        """
+        申购可转债
+        """
+        price, amount = 100, 10000
+
+        ret = {}
+        for i in range(1, config.ACCOUNT_COUNT + 1):
+            self._main.set_focus()
+
+            key = '%%%s' % i
+            pywinauto.keyboard.send_keys(key)
+            self.wait(2)
+
+            pyautogui.hotkey('alt', '%s' % i)
+            self.wait(2)
+
+            name = self.get_account_name()
+            print("press alt + %s to switch account to: %s" % (i, name))
+
+            buy_ret = ''
+            for bond_id in bonds:
+                buy_ret += str(self.buy(bond_id, price, amount)) + "\n"
+                self.wait(2)
+
+            ret[name] = buy_ret
+            self.wait(1)
+
+        return ret
 
     def buy(self, security, price, amount, **kwargs):
         self._switch_left_menus(["买入[F1]"])
-
         return self.trade(security, price, amount)
 
+
     def _switch_left_menus(self, path, sleep=0.2):
+        """
+        点击左侧菜单栏里面指定的按钮
+        """
         self._get_left_menus_handle().get_item(path).click()
         self.wait(sleep)
 
     @functools.lru_cache()
     def _get_left_menus_handle(self):
+        """
+        获取左侧的菜单栏dialog
+        """
         count = 2
         while True:
             try:
+                # self._main.set_focus()
                 handle = self._main.child_window(
-                    control_id=129, class_name="SysTreeView32"
+                    control_id=0x81, class_name="SysTreeView32"
                 )
+
                 if count <= 0:
                     return handle
+
                 # sometime can't find handle ready, must retry
                 handle.wait("ready", 2)
                 return handle
             # pylint: disable=broad-except
-            except Exception as ex:
-                logger.exception("error occurred when trying to get left menus")
+            except Exception as e:
+                logger.exception("error occurred when trying to get left menus, err: %s" % e)
             count = count - 1
 
     def trade(self, security, price, amount):
+        """
+        :param security: 股票id
+        :param price: 价格
+        :param amount: 数量
+        """
         self._set_trade_params(security, price, amount)
-
         self._submit_trade()
-
         return self._handle_pop_dialogs(
             handler_class=TradePopDialogHandler
         )
 
     def _set_trade_params(self, security, price, amount):
+        """
+        设置交易参数
+        """
+
         code = security[-6:]
+
+        print("set_trade_params，code: %s, price: %s, amount: %s" % (security, price, amount))
 
         self._type_edit_control_keys(config.TRADE_SECURITY_CONTROL_ID, code)
 
         # wait security input finish
-        self.wait(0.1)
+        self.wait(0.5)
 
         self._type_edit_control_keys(
             config.TRADE_PRICE_CONTROL_ID,
             round_price_by_code(price, code),
         )
+
+        self.wait(0.5)
         self._type_edit_control_keys(
             config.TRADE_AMOUNT_CONTROL_ID, str(int(amount))
         )
 
     def _type_edit_control_keys(self, control_id, text):
+        """
+        在指定的控件输入文本
+        """
+        print("type_edit_control_keys, control_id: %s, text: %s" % (control_id, text))
         editor = self._main.child_window(control_id=control_id, class_name="Edit")
         editor.select()
         editor.type_keys(text)
@@ -241,36 +314,41 @@ class THSTrader(BaseTrader):
         ).click()
 
     def _handle_pop_dialogs(self, handler_class=PopDialogHandler):
+        """
+        处理弹出的窗口
+        """
         handler = handler_class(self._app)
-
+        cnt = 0
         while self.is_exist_pop_dialog():
-            try:
-                title = self._get_pop_dialog_title()
-            except pywinauto.findwindows.ElementNotFoundError:
-                return {"message": "success"}
+            pyautogui.press('enter')
+            print("exist_pop_dialog, press enter.")
+            self.wait(1)
+            cnt += 1
+            if cnt >= 2:
+                self._main.set_focus()
+                break
 
-            result = handler.handle(title)
-            if result:
-                return result
         return {"message": "success"}
 
     def is_exist_pop_dialog(self):
         self.wait(0.5)  # wait dialog display
         try:
-            return (
-                    self._main.wrapper_object() != self._app.top_window().wrapper_object()
-            )
+            return self._main.wrapper_object() != self._app.top_window().wrapper_object()
         except (
                 findwindows.ElementNotFoundError,
                 timings.TimeoutError,
                 RuntimeError,
-        ) as ex:
-            logger.exception("check pop dialog timeout")
+        ) as e:
+            logger.exception("check pop dialog timeout, err: %s" % e)
             return False
 
     def _get_pop_dialog_title(self):
-        return (
-            self._app.top_window()
-                .child_window(control_id=config.POP_DIALOD_TITLE_CONTROL_ID)
-                .window_text()
-        )
+        print(self._app.top_window().window_text())
+        title = self._app.top_window().child_window(control_id=config.POP_DIALOD_TITLE_CONTROL_ID).window_text()
+        print("top_window: %s" % title)
+
+
+if __name__ == '__main__':
+    from config import ths_xiadan_path
+    ths = THSTrader(ths_xiadan_path)
+    ths.buy_bonds(["113634", "111002"])
