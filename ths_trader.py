@@ -8,7 +8,6 @@ import abc
 import time
 import re
 import functools
-import pyautogui
 import pywinauto
 from pywinauto import win32defines, findwindows, timings
 from pywinauto.win32functions import SetForegroundWindow, ShowWindow
@@ -210,11 +209,11 @@ class THSTrader(BaseTrader):
             pywinauto.keyboard.send_keys(key)
             self.wait(2)
 
-            pyautogui.hotkey('alt', '%s' % i)
-            self.wait(2)
+            # pyautogui.hotkey('alt', '%s' % i)
+            # self.wait(2)
 
             name = self.get_account_name()
-            print("press alt + %s to switch account to: %s" % (i, name))
+            logger.info("press alt + %s to switch account to: %s" % (i, name))
 
             buy_ret = ''
             for bond_id in bonds:
@@ -278,11 +277,8 @@ class THSTrader(BaseTrader):
         """
         设置交易参数
         """
-
         code = security[-6:]
-
-        print("set_trade_params，code: %s, price: %s, amount: %s" % (security, price, amount))
-
+        logger.info("set_trade_params，code: %s, price: %s, amount: %s" % (security, price, amount))
         self._type_edit_control_keys(config.TRADE_SECURITY_CONTROL_ID, code)
 
         # wait security input finish
@@ -302,7 +298,7 @@ class THSTrader(BaseTrader):
         """
         在指定的控件输入文本
         """
-        print("type_edit_control_keys, control_id: %s, text: %s" % (control_id, text))
+        logger.info("type_edit_control_keys, control_id: %s, text: %s" % (control_id, text))
         editor = self._main.child_window(control_id=control_id, class_name="Edit")
         editor.select()
         editor.type_keys(text)
@@ -317,11 +313,10 @@ class THSTrader(BaseTrader):
         """
         处理弹出的窗口
         """
-        handler = handler_class(self._app)
         cnt = 0
         while self.is_exist_pop_dialog():
-            pyautogui.press('enter')
-            print("exist_pop_dialog, press enter.")
+            pywinauto.keyboard.send_keys('{ENTER}')
+            logger.info("exist_pop_dialog, press enter.")
             self.wait(1)
             cnt += 1
             if cnt >= 2:
@@ -341,11 +336,6 @@ class THSTrader(BaseTrader):
         ) as e:
             logger.exception("check pop dialog timeout, err: %s" % e)
             return False
-
-    def _get_pop_dialog_title(self):
-        print(self._app.top_window().window_text())
-        title = self._app.top_window().child_window(control_id=config.POP_DIALOD_TITLE_CONTROL_ID).window_text()
-        print("top_window: %s" % title)
 
 
 if __name__ == '__main__':

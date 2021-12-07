@@ -3,7 +3,7 @@
 SCKey = "SCT98673TYf150JJ3QxDbb3DLpbj1RYBS"
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:67.0) Gecko/20100101 Firefox/67.0 "
 headers = {'User-Agent': user_agent}
-ths_xiadan_path = r"D:\Program Files (x86)\同花顺\xiadan.exe"
+ths_xiadan_path = r"C:\同花顺软件\同花顺\xiadan.exe"
 
 
 # 请在理解pywin32操作窗口逻辑后，在下面自行适配你的同花顺交易客户端句柄ID
