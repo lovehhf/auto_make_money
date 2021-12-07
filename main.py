@@ -48,6 +48,5 @@ if __name__ == '__main__':
         scheduler = BlockingScheduler(timezone="Asia/Shanghai")
         scheduler.add_job(buy_convert_bond, 'cron', day_of_week='1-5', hour=9, minute=40)
         scheduler.start()
-        buy_convert_bond()
     if is_test():
         buy_convert_bond()

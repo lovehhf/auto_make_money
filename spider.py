@@ -43,18 +43,18 @@ class EastSpider():
         :param date: %Y-%m-%d 格式的日期
         """
         try:
-            bond_list = self.get_bond_list()
+            data = self.get_bond_list()
         except RuntimeError as e:  # API偶尔解析错误，直接返回空list
             logger.info("get bond list failed, err: %s" % e)
-            return []
+            data = []
 
-        bond_list = []
-        for stock in bond_list:
+        ret = []
+        for stock in data:
             if stock['VALUE_DATE'].split()[0] == date:
-                bond_list.append(stock['CORRECODE'])
+                ret.append(stock['CORRECODE'])
 
-        logger.info("today is: %s, todat_list: %s" % (date, bond_list))
-        return bond_list
+        logger.info("today is: %s, bond_list: %s" % (date, ret))
+        return ret
 
 
     def get_today_bond_list(self) -> list:
