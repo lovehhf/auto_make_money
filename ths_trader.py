@@ -13,12 +13,9 @@ import pandas as pd
 import pywinauto
 from pywinauto import win32defines, findwindows, timings
 from pywinauto.win32functions import SetForegroundWindow, ShowWindow
-from io import StringIO
 
 import config
 from utils.log import logger
-from utils.captcha import captcha_recognize
-from typing import Optional
 
 
 class TradeError(IOError):
@@ -101,7 +98,7 @@ class PopDialogHandler:
 
 
 class TradePopDialogHandler(PopDialogHandler):
-    def handle(self, title) -> Optional[dict]:
+    def handle(self, title):
         if title == "委托确认":
             self._submit_by_shortcut()
             return None
@@ -213,16 +210,13 @@ class THSTrader(BaseTrader):
             pywinauto.keyboard.send_keys(key)
             self.wait(2)
 
-            # pyautogui.hotkey('alt', '%s' % i)
-            # self.wait(2)
-
             name = self.get_account_name()
             logger.info("press alt + %s to switch account to: %s" % (i, name))
 
             buy_ret = ''
-            # for bond_id in bonds:
-            #     buy_ret += str(self.buy(bond_id, price, amount)) + "\n"
-            #     self.wait(2)
+            for bond_id in bonds:
+                buy_ret += str(self.buy(bond_id, price, amount)) + "\n"
+                self.wait(2)
 
             self.auto_ipo()
 
@@ -365,6 +359,10 @@ class THSTrader(BaseTrader):
         return df.to_dict("records")
 
     def _get_grid_data(self, control_id):
+        """
+        获取通过保存到xls获取表格数据
+        暂时没有用到此函数，现采用的是爬取东方财富的数据
+        """
         grid = self._get_grid(control_id)
         set_foreground(grid)  # setFocus buggy, instead of SetForegroundWindow
         grid.type_keys("^s", set_foreground=False)
@@ -378,6 +376,7 @@ class THSTrader(BaseTrader):
                     ).capture_as_image().save(file_path)
                     set_foreground(grid)
 
+                    from utils.captcha import captcha_recognize
                     captcha_num = captcha_recognize("tmp.png").strip()  # 识别验证码
                     captcha_num = "".join(captcha_num.split())
                     logger.info("captcha result-->" + captcha_num)
@@ -408,9 +407,11 @@ class THSTrader(BaseTrader):
         return self._format_grid_data(temp_path)
 
     def _click(self, control_id):
-        self._app.top_window().child_window(
-            control_id=control_id, class_name="Button"
-        ).click()
+        """
+        鼠标点击指定控件
+        """
+        btn = self._app.top_window().child_window(control_id=control_id, class_name="Button")
+        btn.click()
 
     def _click_grid_by_row(self, row):
         x = config.COMMON_GRID_LEFT_MARGIN
