@@ -16,7 +16,7 @@ from pywinauto.win32functions import SetForegroundWindow, ShowWindow
 
 import config
 from utils.log import logger
-
+from spider import EastSpider
 
 class TradeError(IOError):
     pass
@@ -152,6 +152,7 @@ class THSTrader(BaseTrader):
     def __init__(self, exe_path):
         super().__init__()
         self.connect(exe_path)
+        self.spider = EastSpider()
 
     def connect(self, exe_path: str):
         self._app = pywinauto.Application().connect(path=exe_path, timeout=10)
@@ -196,11 +197,12 @@ class THSTrader(BaseTrader):
 
         return ret
 
-    def buy_bonds(self, bonds):
+    def buy_bonds(self):
         """
         申购可转债
         """
         price, amount = 100, 10000
+        bonds = self.spider.get_today_bond_list()
 
         ret = {}
         for i in range(1, config.ACCOUNT_COUNT + 1):
@@ -210,8 +212,9 @@ class THSTrader(BaseTrader):
             pywinauto.keyboard.send_keys(key)
             self.wait(2)
 
-            name = self.get_account_name()
-            logger.info("press alt + %s to switch account to: %s" % (i, name))
+            if config.ACCOUNT_COUNT > 1:
+                name = self.get_account_name()
+                logger.info("press alt + %s to switch account to: %s" % (i, name))
 
             buy_ret = ''
             for bond_id in bonds:
@@ -454,7 +457,7 @@ if __name__ == '__main__':
     from config import ths_xiadan_path
 
     ths = THSTrader(ths_xiadan_path)
-    ths.buy_bonds(["113634", "111002"])
+    ths.buy_bonds()
 
     # from utils.stock import get_today_ipo_data
     # ipo_data = get_today_ipo_data()

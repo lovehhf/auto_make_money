@@ -4,9 +4,8 @@ import sys
 import requests
 
 from apscheduler.schedulers.blocking import BlockingScheduler
-from utils import logger
+from utils.log import logger
 from ths_trader import THSTrader
-from spider import EastSpider
 from config import ths_xiadan_path, SCKey
 
 
@@ -23,14 +22,8 @@ def buy_convert_bond():
     push_message = ''
 
     try:
-        spider = EastSpider()
-        today_bond_list = spider.get_today_bond_list()
-
-        if not today_bond_list:
-            raise Exception("今日没有可申购的可转债")
-
         ths_trader = THSTrader(ths_xiadan_path)
-        res = ths_trader.buy_bonds(today_bond_list)
+        res = ths_trader.buy_bonds()
         push_message += str(res) + '\n'
     except Exception as e:
         push_message += str(e)
