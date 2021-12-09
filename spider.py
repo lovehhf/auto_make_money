@@ -8,7 +8,7 @@ import abc
 import requests
 import time
 from config import headers
-from utils import logger
+from utils.log import logger
 
 
 class EastSpider():

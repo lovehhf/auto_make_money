@@ -8,12 +8,16 @@ import abc
 import time
 import re
 import functools
+import tempfile
+import pandas as pd
 import pywinauto
 from pywinauto import win32defines, findwindows, timings
 from pywinauto.win32functions import SetForegroundWindow, ShowWindow
+from io import StringIO
 
 import config
-from utils import logger
+from utils.log import logger
+from utils.captcha import captcha_recognize
 from typing import Optional
 
 
@@ -29,6 +33,13 @@ def get_code_type(code):
     if code.startswith(('00', '30', '60')):
         return 'stock'
     return 'fund'
+
+
+def set_foreground(window):
+    if window.has_style(win32defines.WS_MINIMIZE):  # if minimized
+        ShowWindow(window.wrapper_object(), 9)  # restore window state
+    else:
+        SetForegroundWindow(window.wrapper_object())  # bring to front
 
 
 def round_price_by_code(price, code):
@@ -52,12 +63,6 @@ class PopDialogHandler:
         self._app = app
 
     @staticmethod
-    def _set_foreground(window):
-        if window.has_style(win32defines.WS_MINIMIZE):  # if minimized
-            ShowWindow(window.wrapper_object(), 9)  # restore window state
-        else:
-            SetForegroundWindow(window.wrapper_object())  # bring to front
-
     def handle(self, title):
         if any(s in title for s in {"提示信息", "委托确认", "网上交易用户协议", "撤单确认"}):
             self._submit_by_shortcut()
@@ -88,7 +93,7 @@ class PopDialogHandler:
             ).click()
 
     def _submit_by_shortcut(self):
-        self._set_foreground(self._app.top_window())
+        set_foreground(self._app.top_window())
         self._app.top_window().type_keys("%Y", set_foreground=False)
 
     def _close(self):
@@ -194,7 +199,6 @@ class THSTrader(BaseTrader):
 
         return ret
 
-
     def buy_bonds(self, bonds):
         """
         申购可转债
@@ -216,9 +220,11 @@ class THSTrader(BaseTrader):
             logger.info("press alt + %s to switch account to: %s" % (i, name))
 
             buy_ret = ''
-            for bond_id in bonds:
-                buy_ret += str(self.buy(bond_id, price, amount)) + "\n"
-                self.wait(2)
+            # for bond_id in bonds:
+            #     buy_ret += str(self.buy(bond_id, price, amount)) + "\n"
+            #     self.wait(2)
+
+            self.auto_ipo()
 
             ret[name] = buy_ret
             self.wait(1)
@@ -228,7 +234,6 @@ class THSTrader(BaseTrader):
     def buy(self, security, price, amount, **kwargs):
         self._switch_left_menus(["买入[F1]"])
         return self.trade(security, price, amount)
-
 
     def _switch_left_menus(self, path, sleep=0.2):
         """
@@ -328,7 +333,13 @@ class THSTrader(BaseTrader):
     def is_exist_pop_dialog(self):
         self.wait(0.5)  # wait dialog display
         try:
-            return self._main.wrapper_object() != self._app.top_window().wrapper_object()
+            main_wrapper = self._main.wrapper_object()
+            top_window_wrapper = self._app.top_window().wrapper_object()
+            ret = main_wrapper != top_window_wrapper
+            if ret:
+                print(main_wrapper, top_window_wrapper)
+            return ret
+
         except (
                 findwindows.ElementNotFoundError,
                 timings.TimeoutError,
@@ -337,8 +348,113 @@ class THSTrader(BaseTrader):
             logger.exception("check pop dialog timeout, err: %s" % e)
             return False
 
+    def _get_grid(self, control_id: int):
+        grid = self._main.child_window(
+            control_id=control_id, class_name="CVirtualGridCtrl"
+        )
+        return grid
+
+    def _format_grid_data(self, filepath: str):
+        df = pd.read_csv(
+            filepath,
+            delimiter="\t",
+            dtype=config.GRID_DTYPE,
+            na_filter=False,
+            encoding = "gbk"
+        )
+        return df.to_dict("records")
+
+    def _get_grid_data(self, control_id):
+        grid = self._get_grid(control_id)
+        set_foreground(grid)  # setFocus buggy, instead of SetForegroundWindow
+        grid.type_keys("^s", set_foreground=False)
+        count = 10
+        while count > 0:
+            if self.is_exist_pop_dialog():
+                if self._app.top_window().window(class_name="Static", title_re=".*输入验证码.*"):
+                    file_path = "tmp.png"
+                    self._app.top_window().window(
+                        class_name="Static", control_id=0x965
+                    ).capture_as_image().save(file_path)
+                    set_foreground(grid)
+
+                    captcha_num = captcha_recognize("tmp.png").strip()  # 识别验证码
+                    captcha_num = "".join(captcha_num.split())
+                    logger.info("captcha result-->" + captcha_num)
+                    if len(captcha_num) == 4:
+                        editor = self._app.top_window().child_window(control_id=0x964, class_name="Edit")
+                        editor.select()
+                        editor.type_keys(captcha_num)
+                        self._app.top_window().set_focus()
+                        pywinauto.keyboard.send_keys("{ENTER}")  # 模拟发送enter，点击确定
+                        self.wait(1)
+                break
+            self.wait(1)
+            count -= 1
+
+        temp_path = tempfile.mktemp(suffix=".csv")
+        set_foreground(self._app.top_window())
+
+        # alt+s保存，alt+y替换已存在的文件
+        self._app.top_window().Edit1.set_edit_text(temp_path)
+        self.wait(0.1)
+        self._app.top_window().type_keys("%{s}%{y}", set_foreground=False)
+        # Wait until file save complete otherwise pandas can not find file
+        self.wait(0.2)
+        if self.is_exist_pop_dialog():
+            self._app.top_window().Button2.click()
+            self.wait(0.2)
+
+        return self._format_grid_data(temp_path)
+
+    def _click(self, control_id):
+        self._app.top_window().child_window(
+            control_id=control_id, class_name="Button"
+        ).click()
+
+    def _click_grid_by_row(self, row):
+        x = config.COMMON_GRID_LEFT_MARGIN
+        y = config.COMMON_GRID_FIRST_ROW_HEIGHT + config.COMMON_GRID_ROW_HEIGHT * row
+
+        self._app.top_window().child_window(
+            control_id=config.COMMON_GRID_CONTROL_ID,
+            class_name="CVirtualGridCtrl",
+        ).click(coords=(x, y))
+
+    def auto_ipo(self):
+        self._switch_left_menus(config.AUTO_IPO_MENU_PATH)
+
+        stock_list = self._get_grid_data(config.COMMON_GRID_CONTROL_ID)
+
+        if len(stock_list) == 0:
+            return {"message": "今日无新股"}
+
+        invalid_list_idx = [
+            i for i, v in enumerate(stock_list) if v[config.AUTO_IPO_NUMBER] <= 0
+        ]
+
+        if len(stock_list) == len(invalid_list_idx):
+            return {"message": "没有发现可以申购的新股"}
+
+        self._click(config.AUTO_IPO_SELECT_ALL_BUTTON_CONTROL_ID)
+        self.wait(0.1)
+
+        for row in invalid_list_idx:
+            self._click_grid_by_row(row)
+        self.wait(0.1)
+
+        self._click(config.AUTO_IPO_BUTTON_CONTROL_ID)
+        self.wait(0.1)
+
+        return self._handle_pop_dialogs()
+
 
 if __name__ == '__main__':
     from config import ths_xiadan_path
+
     ths = THSTrader(ths_xiadan_path)
     ths.buy_bonds(["113634", "111002"])
+
+    # from utils.stock import get_today_ipo_data
+    # ipo_data = get_today_ipo_data()
+    # print(ipo_data)

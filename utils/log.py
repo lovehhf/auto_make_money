@@ -16,7 +16,7 @@ sh = logging.StreamHandler()
 sh.setFormatter(fmt)
 
 # 日志输出到文件
-log_file = "logs/auto_make_money.log"
+log_file = "../logs/auto_make_money.log"
 os.makedirs(os.path.dirname(log_file), exist_ok=True)
 fh = logging.FileHandler(log_file, mode='a', encoding='utf-8')
 fh.setFormatter(fmt)
