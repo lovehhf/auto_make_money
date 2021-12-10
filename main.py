@@ -23,7 +23,7 @@ def buy_convert_bond():
 
     try:
         ths_trader = THSTrader(ths_xiadan_path)
-        res = ths_trader.buy_bonds()
+        res = ths_trader.auto_ipo()
         push_message += str(res) + '\n'
     except Exception as e:
         push_message += str(e)

@@ -4,9 +4,7 @@
 link： https://github.com/shidenggui/easytrader
 """
 
-import abc
 import time
-import re
 import functools
 import tempfile
 import pandas as pd
@@ -18,9 +16,6 @@ import config
 from utils.log import logger
 from spider import EastSpider
 
-class TradeError(IOError):
-    pass
-
 
 def get_code_type(code):
     """
@@ -30,13 +25,6 @@ def get_code_type(code):
     if code.startswith(('00', '30', '60')):
         return 'stock'
     return 'fund'
-
-
-def set_foreground(window):
-    if window.has_style(win32defines.WS_MINIMIZE):  # if minimized
-        ShowWindow(window.wrapper_object(), 9)  # restore window state
-    else:
-        SetForegroundWindow(window.wrapper_object())  # bring to front
 
 
 def round_price_by_code(price, code):
@@ -55,107 +43,26 @@ def round_price_by_code(price, code):
     return '{:.2f}'.format(price)
 
 
-class PopDialogHandler:
-    def __init__(self, app):
-        self._app = app
-
-    @staticmethod
-    def handle(self, title):
-        if any(s in title for s in {"提示信息", "委托确认", "网上交易用户协议", "撤单确认"}):
-            self._submit_by_shortcut()
-            return None
-
-        if "提示" in title:
-            content = self._extract_content()
-            self._submit_by_click()
-            return {"message": content}
-
-        content = self._extract_content()
-        self._close()
-        return {"message": "unknown message: {}".format(content)}
-
-    def _extract_content(self):
-        return self._app.top_window().Static.window_text()
-
-    @staticmethod
-    def _extract_entrust_id(content):
-        return re.search(r"[\da-zA-Z]+", content).group()
-
-    def _submit_by_click(self):
-        try:
-            self._app.top_window()["确定"].click()
-        except Exception as ex:
-            self._app.Window_(best_match="Dialog", top_level_only=True).ChildWindow(
-                best_match="确定"
-            ).click()
-
-    def _submit_by_shortcut(self):
-        set_foreground(self._app.top_window())
-        self._app.top_window().type_keys("%Y", set_foreground=False)
-
-    def _close(self):
-        self._app.top_window().close()
+def set_foreground(window):
+    if window.has_style(win32defines.WS_MINIMIZE):  # if minimized
+        ShowWindow(window.wrapper_object(), 9)  # restore window state
+    else:
+        SetForegroundWindow(window.wrapper_object())  # bring to front
 
 
-class TradePopDialogHandler(PopDialogHandler):
-    def handle(self, title):
-        if title == "委托确认":
-            self._submit_by_shortcut()
-            return None
-
-        if title == "提示信息":
-            content = self._extract_content()
-            if "超出涨跌停" in content:
-                self._submit_by_shortcut()
-                return None
-
-            if "委托价格的小数价格应为" in content:
-                self._submit_by_shortcut()
-                return None
-
-            if "逆回购" in content:
-                self._submit_by_shortcut()
-                return None
-
-            if "正回购" in content:
-                self._submit_by_shortcut()
-                return None
-
-            return None
-
-        if title == "提示":
-            content = self._extract_content()
-            if "成功" in content:
-                entrust_no = self._extract_entrust_id(content)
-                self._submit_by_click()
-                return {"entrust_no": entrust_no}
-
-            self._submit_by_click()
-            time.sleep(0.05)
-            raise TradeError(content)
-        self._close()
-        return None
-
-
-class BaseTrader(abc.ABC):
-    def __init__(self):
-        pass
-
-    def connect(self, exe_path: str):
-        pass
-
-    def buy(self, stock_id: str, price, amount):
-        pass
-
-
-class THSTrader(BaseTrader):
+class THSTrader():
     def __init__(self, exe_path):
         super().__init__()
         self.connect(exe_path)
         self.spider = EastSpider()
 
     def connect(self, exe_path: str):
-        self._app = pywinauto.Application().connect(path=exe_path, timeout=10)
+        try:
+            self._app = pywinauto.Application().connect(path=exe_path, timeout=3)
+        except Exception as e:
+            logger.warning("try connect exe_path: %s failed, err: %s, try start it" % (exe_path, e))
+            self._app = pywinauto.Application().start(exe_path)
+
         self._close_prompt_windows()
         self._main = self._app.top_window()
         self._init_toolbar()
@@ -197,34 +104,50 @@ class THSTrader(BaseTrader):
 
         return ret
 
-    def buy_bonds(self):
+    def auto_ipo(self):
+        """
+        自动申购可转债和新股
+        """
+        ret = ""
+        for i in range(1, config.ACCOUNT_COUNT + 1):
+            set_foreground(self._main)
+            self.wait(1)
+
+            if config.ACCOUNT_COUNT > 1:
+                key = '%%%s' % i
+                pywinauto.keyboard.send_keys(key)
+                name = self.get_account_name()
+                logger.info("press alt + %s to switch account to: %s" % (i, name))
+                ret += name + "\n"
+
+            logger.info("start apply bonds")
+            ret += self.apple_bonds() + "\n"
+
+            logger.info("start apply stocks")
+            ret += self.apply_stocks() + "\n"
+
+        ret += '=' * 20 + "\n"
+        return ret
+
+    def apple_bonds(self):
         """
         申购可转债
         """
         price, amount = 100, 10000
         bonds = self.spider.get_today_bond_list()
 
-        ret = {}
-        for i in range(1, config.ACCOUNT_COUNT + 1):
-            self._main.set_focus()
+        if not bonds:
+            return "今日无可转债可申购"
 
-            key = '%%%s' % i
-            pywinauto.keyboard.send_keys(key)
-            self.wait(2)
-
-            if config.ACCOUNT_COUNT > 1:
-                name = self.get_account_name()
-                logger.info("press alt + %s to switch account to: %s" % (i, name))
-
-            buy_ret = ''
-            for bond_id in bonds:
-                buy_ret += str(self.buy(bond_id, price, amount)) + "\n"
-                self.wait(2)
-
-            self.auto_ipo()
-
-            ret[name] = buy_ret
-            self.wait(1)
+        ret = ""
+        for bond_id in bonds:
+            try:
+                self.buy(bond_id, price, amount)
+                ret += "可转债: %s 申购成功;" % bond_id
+                self.wait(1)
+            except Exception as e:
+                logger.error("buy bond: %s failed, err: %s" % bond_id, e)
+                ret += "可转债: %s 申购失败;\n" % bond_id
 
         return ret
 
@@ -271,16 +194,27 @@ class THSTrader(BaseTrader):
         """
         self._set_trade_params(security, price, amount)
         self._submit_trade()
-        return self._handle_pop_dialogs(
-            handler_class=TradePopDialogHandler
-        )
+        self._handle_pop_dialogs()
 
-    def _set_trade_params(self, security, price, amount):
+    def _handle_pop_dialogs(self):
+        """
+        处理弹出的窗口
+        """
+        cnt = 0
+        while self.is_exist_pop_dialog():
+            pywinauto.keyboard.send_keys('{ENTER}')
+            logger.info("exist_pop_dialog, press enter.")
+            self.wait(1)
+            cnt += 1
+            if cnt >= 3:
+                self._main.set_focus()
+                break
+
+    def _set_trade_params(self, code, price, amount):
         """
         设置交易参数
         """
-        code = security[-6:]
-        logger.info("set_trade_params，code: %s, price: %s, amount: %s" % (security, price, amount))
+        logger.info("set_trade_params，code: %s, price: %s, amount: %s" % (code, price, amount))
         self._type_edit_control_keys(config.TRADE_SECURITY_CONTROL_ID, code)
 
         # wait security input finish
@@ -303,6 +237,8 @@ class THSTrader(BaseTrader):
         logger.info("type_edit_control_keys, control_id: %s, text: %s" % (control_id, text))
         editor = self._main.child_window(control_id=control_id, class_name="Edit")
         editor.select()
+        # pywinauto.keyboard.send_keys('^a')
+        # pywinauto.keyboard.send_keys('{DEL}')
         editor.type_keys(text)
 
     def _submit_trade(self):
@@ -311,30 +247,12 @@ class THSTrader(BaseTrader):
             control_id=config.TRADE_SUBMIT_CONTROL_ID, class_name="Button"
         ).click()
 
-    def _handle_pop_dialogs(self, handler_class=PopDialogHandler):
-        """
-        处理弹出的窗口
-        """
-        cnt = 0
-        while self.is_exist_pop_dialog():
-            pywinauto.keyboard.send_keys('{ENTER}')
-            logger.info("exist_pop_dialog, press enter.")
-            self.wait(1)
-            cnt += 1
-            if cnt >= 2:
-                self._main.set_focus()
-                break
-
-        return {"message": "success"}
-
     def is_exist_pop_dialog(self):
         self.wait(0.5)  # wait dialog display
         try:
             main_wrapper = self._main.wrapper_object()
             top_window_wrapper = self._app.top_window().wrapper_object()
             ret = main_wrapper != top_window_wrapper
-            if ret:
-                print(main_wrapper, top_window_wrapper)
             return ret
 
         except (
@@ -357,7 +275,7 @@ class THSTrader(BaseTrader):
             delimiter="\t",
             dtype=config.GRID_DTYPE,
             na_filter=False,
-            encoding = "gbk"
+            encoding="gbk"
         )
         return df.to_dict("records")
 
@@ -391,6 +309,7 @@ class THSTrader(BaseTrader):
                         pywinauto.keyboard.send_keys("{ENTER}")  # 模拟发送enter，点击确定
                         self.wait(1)
                 break
+
             self.wait(1)
             count -= 1
 
@@ -425,40 +344,45 @@ class THSTrader(BaseTrader):
             class_name="CVirtualGridCtrl",
         ).click(coords=(x, y))
 
-    def auto_ipo(self):
-        self._switch_left_menus(config.AUTO_IPO_MENU_PATH)
-
-        stock_list = self._get_grid_data(config.COMMON_GRID_CONTROL_ID)
+    def apply_stocks(self):
+        stock_list = self.spider.get_today_stock()
 
         if len(stock_list) == 0:
-            return {"message": "今日无新股"}
+            return "今日无新股"
 
-        invalid_list_idx = [
-            i for i, v in enumerate(stock_list) if v[config.AUTO_IPO_NUMBER] <= 0
-        ]
+        ret = ""
+        set_foreground(self._main)
+        self._switch_left_menus(config.AUTO_IPO_MENU_PATH)
 
-        if len(stock_list) == len(invalid_list_idx):
-            return {"message": "没有发现可以申购的新股"}
+        new_stocks = []
+        for stock in stock_list:
+            stock_id = stock['id']
+            stock_name = stock['name']
+            stock_price = stock['price']
+            self._type_edit_control_keys(control_id=config.TRADE_SECURITY_CONTROL_ID, text=stock_id)
+            self.wait(1)
 
-        self._click(config.AUTO_IPO_SELECT_ALL_BUTTON_CONTROL_ID)
-        self.wait(0.1)
+            apply_num = self._main.child_window(control_id=0x3FA, class_name="Static").window_text()
+            if not apply_num or int(apply_num) == 0:
+                set_foreground(self._main)
+                self._main.child_window(control_id=config.TRADE_REFILL_CONTRON_ID, class_name="Button").click()
+                self.wait(1)
+                ret += "%s 可申购数量: %s; " % (stock_name, 0)
+                continue
 
-        for row in invalid_list_idx:
-            self._click_grid_by_row(row)
-        self.wait(0.1)
+            new_stocks.append([stock_id, stock_name, stock_price, apply_num])
+            self.wait(1)
 
-        self._click(config.AUTO_IPO_BUTTON_CONTROL_ID)
-        self.wait(0.1)
+        ret += '\n'
+        for stock_id, stock_name, stock_price, apply_num in new_stocks:
+            self.buy(stock_id, stock_price, apply_num)
+            ret += "%s 申购成功， 申购数量: %s; " % (stock_name, apply_num)
+            self.wait(1)
 
-        return self._handle_pop_dialogs()
+        return ret
 
 
 if __name__ == '__main__':
     from config import ths_xiadan_path
-
     ths = THSTrader(ths_xiadan_path)
-    ths.buy_bonds()
-
-    # from utils.stock import get_today_ipo_data
-    # ipo_data = get_today_ipo_data()
-    # print(ipo_data)
+    ths.apply_stocks()
