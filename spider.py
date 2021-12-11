@@ -91,7 +91,7 @@ class EastSpider():
             if stock['APPLY_DATE'].split()[0] == date:
                 ret.append({"id": stock['APPLY_CODE'],"name": stock['SECURITY_NAME'], 'price': stock['ISSUE_PRICE']})
 
-        logger.info("today is: %s, bond_list: %s" % (date, ret))
+        logger.info("today is: %s, stock_list: %s" % (date, ret))
         return ret
 
     def get_today_stock(self):
