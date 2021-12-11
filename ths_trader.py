@@ -125,8 +125,8 @@ class THSTrader():
 
             logger.info("start apply stocks")
             ret += self.apply_stocks() + "\n"
+            ret += '=' * 20 + "\n"
 
-        ret += '=' * 20 + "\n"
         return ret
 
     def apple_bonds(self):

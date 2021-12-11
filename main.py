@@ -30,7 +30,8 @@ def buy_convert_bond():
     finally:
         if not is_test():
             push_url = 'http://sc.ftqq.com/' + SCKey + '.send'
-            resp = requests.get(push_url, params={'text': '今日可转债通知', 'desp': push_message}).json()
+            data = {'text': '今日新股新债申购通知', 'desp': push_message}
+            resp = requests.post(push_url, params=data).json()
             logger.info("requests, resp: %s" % resp)
         else:
             logger.info(push_message)
@@ -39,7 +40,7 @@ def buy_convert_bond():
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == 'cron':
         scheduler = BlockingScheduler(timezone="Asia/Shanghai")
-        scheduler.add_job(buy_convert_bond, 'cron', day_of_week='1-5', hour=9, minute=40)
+        scheduler.add_job(buy_convert_bond, 'cron', day_of_week='0-4', hour=9, minute=40)
         scheduler.start()
     if is_test():
         buy_convert_bond()
