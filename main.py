@@ -31,7 +31,7 @@ def buy_convert_bond():
         if not is_test():
             push_url = 'http://sc.ftqq.com/' + SCKey + '.send'
             data = {'text': '今日新股新债申购通知', 'desp': push_message}
-            resp = requests.post(push_url, params=data).json()
+            resp = requests.post(push_url, data=data).json()
             logger.info("requests, resp: %s" % resp)
         else:
             logger.info(push_message)

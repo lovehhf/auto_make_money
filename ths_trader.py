@@ -109,39 +109,50 @@ class THSTrader():
         自动申购可转债和新股
         """
         ret = ""
+        stock_list = self.spider.get_today_stock()
+        bonds = self.spider.get_today_bond_list()
+        users = set()
+
         for i in range(1, config.ACCOUNT_COUNT + 1):
             set_foreground(self._main)
             self.wait(1)
 
             if config.ACCOUNT_COUNT > 1:
-                key = '%%%s' % i
-                self.wait(3)
-                pywinauto.keyboard.send_keys(key)
-                name = self.get_account_name()
-                logger.info("press alt + %s to switch account to: %s" % (i, name))
-                ret += name + "\n"
+                cnt = 0
+                while cnt < 3:
+                    key = '%%%s' % i
+                    self.wait(3)
+                    pywinauto.keyboard.send_keys(key)
+                    name = self.get_account_name()
+                    logger.info("press alt + %s to switch account to: %s" % (i, name))
+                    if name and name not in users:
+                        ret += name + "\n"
+                        users.add(name)
+                        break
+                    cnt += 1
+                else:
+                    logger.warning("swicth user %s failed", i)
 
             logger.info("start apply bonds")
-            ret += self.apple_bonds() + "\n"
+            ret += self.apple_bonds(bonds) + "\n"
             self.wait(1)
 
             logger.info("start apply stocks")
-            ret += self.apply_stocks() + "\n"
+            ret += self.apply_stocks(stock_list) + "\n"
             self.wait(1)
 
             ret += '=' * 20 + "\n"
 
         return ret
 
-    def apple_bonds(self):
+    def apple_bonds(self, bonds):
         """
         申购可转债
         """
         price, amount = 100, 10000
-        bonds = self.spider.get_today_bond_list()
 
         if not bonds:
-            return "今日无可转债可申购"
+            return "今日无可转债"
 
         ret = ""
         for bond_id in bonds:
@@ -155,7 +166,7 @@ class THSTrader():
 
         return ret
 
-    def buy(self, security, price, amount, **kwargs):
+    def buy(self, security, price, amount):
         self._switch_left_menus(["买入[F1]"])
         return self.trade(security, price, amount)
 
@@ -348,8 +359,7 @@ class THSTrader():
             class_name="CVirtualGridCtrl",
         ).click(coords=(x, y))
 
-    def apply_stocks(self):
-        stock_list = self.spider.get_today_stock()
+    def apply_stocks(self, stock_list):
 
         if len(stock_list) == 0:
             return "今日无新股"
@@ -390,4 +400,4 @@ if __name__ == '__main__':
     from config import ths_xiadan_path
 
     ths = THSTrader(ths_xiadan_path)
-    ths.apply_stocks()
+    ths.auto_ipo()

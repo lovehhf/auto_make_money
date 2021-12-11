@@ -1,6 +1,6 @@
 # -*- encoding: utf-8 -*-
 
-SCKey = "SCT98673TYf150JJ3QxDbb3DLpbj1RYBS"
+SCKey = "xxx"
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:67.0) Gecko/20100101 Firefox/67.0 "
 headers = {'User-Agent': user_agent}
 ths_xiadan_path = r"C:\同花顺软件\同花顺\xiadan.exe"
