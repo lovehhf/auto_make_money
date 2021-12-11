@@ -115,6 +115,7 @@ class THSTrader():
 
             if config.ACCOUNT_COUNT > 1:
                 key = '%%%s' % i
+                self.wait(3)
                 pywinauto.keyboard.send_keys(key)
                 name = self.get_account_name()
                 logger.info("press alt + %s to switch account to: %s" % (i, name))
@@ -122,9 +123,12 @@ class THSTrader():
 
             logger.info("start apply bonds")
             ret += self.apple_bonds() + "\n"
+            self.wait(1)
 
             logger.info("start apply stocks")
             ret += self.apply_stocks() + "\n"
+            self.wait(1)
+
             ret += '=' * 20 + "\n"
 
         return ret
@@ -384,5 +388,6 @@ class THSTrader():
 
 if __name__ == '__main__':
     from config import ths_xiadan_path
+
     ths = THSTrader(ths_xiadan_path)
     ths.apply_stocks()
