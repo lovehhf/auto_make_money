@@ -90,7 +90,7 @@ class THSTrader():
         """
         self._toolbar = self._main.child_window(class_name="ToolbarWindow32")
 
-    def get_account_name(self):
+    def _get_account_name(self):
         """
         获取账户名
         """
@@ -100,75 +100,9 @@ class THSTrader():
             dialog = self._toolbar.child_window(control_id=0x912, class_name="ComboBox")
             ret = dialog.window_text()
         except Exception as e:
-            logger.error("get_account_name failed, err: %s" % e)
+            logger.error("_get_account_name failed, err: %s" % e)
 
         return ret
-
-    def auto_ipo(self):
-        """
-        自动申购可转债和新股
-        """
-        ret = ""
-        stock_list = self.spider.get_today_stock()
-        bonds = self.spider.get_today_bond_list()
-        users = set()
-
-        for i in range(1, config.ACCOUNT_COUNT + 1):
-            set_foreground(self._main)
-            self.wait(1)
-
-            if config.ACCOUNT_COUNT > 1:
-                cnt = 0
-                while cnt < 3:
-                    key = '%%%s' % i
-                    self.wait(3)
-                    pywinauto.keyboard.send_keys(key)
-                    name = self.get_account_name()
-                    logger.info("press alt + %s to switch account to: %s" % (i, name))
-                    if name and name not in users:
-                        ret += name + "\n"
-                        users.add(name)
-                        break
-                    cnt += 1
-                else:
-                    logger.warning("swicth user %s failed", i)
-
-            logger.info("start apply bonds")
-            ret += self.apple_bonds(bonds) + "\n"
-            self.wait(1)
-
-            logger.info("start apply stocks")
-            ret += self.apply_stocks(stock_list) + "\n"
-            self.wait(1)
-
-            ret += '=' * 20 + "\n"
-
-        return ret
-
-    def apple_bonds(self, bonds):
-        """
-        申购可转债
-        """
-        price, amount = 100, 10000
-
-        if not bonds:
-            return "今日无可转债"
-
-        ret = ""
-        for bond_id in bonds:
-            try:
-                self.buy(bond_id, price, amount)
-                ret += "可转债: %s 申购成功;" % bond_id
-                self.wait(1)
-            except Exception as e:
-                logger.error("buy bond: %s failed, err: %s" % bond_id, e)
-                ret += "可转债: %s 申购失败;\n" % bond_id
-
-        return ret
-
-    def buy(self, security, price, amount):
-        self._switch_left_menus(["买入[F1]"])
-        return self.trade(security, price, amount)
 
     def _switch_left_menus(self, path, sleep=0.2):
         """
@@ -201,22 +135,12 @@ class THSTrader():
                 logger.exception("error occurred when trying to get left menus, err: %s" % e)
             count = count - 1
 
-    def trade(self, security, price, amount):
-        """
-        :param security: 股票id
-        :param price: 价格
-        :param amount: 数量
-        """
-        self._set_trade_params(security, price, amount)
-        self._submit_trade()
-        self._handle_pop_dialogs()
-
     def _handle_pop_dialogs(self):
         """
         处理弹出的窗口
         """
         cnt = 0
-        while self.is_exist_pop_dialog():
+        while self._is_exist_pop_dialog():
             pywinauto.keyboard.send_keys('{ENTER}')
             logger.info("exist_pop_dialog, press enter.")
             self.wait(1)
@@ -262,22 +186,6 @@ class THSTrader():
             control_id=config.TRADE_SUBMIT_CONTROL_ID, class_name="Button"
         ).click()
 
-    def is_exist_pop_dialog(self):
-        self.wait(0.5)  # wait dialog display
-        try:
-            main_wrapper = self._main.wrapper_object()
-            top_window_wrapper = self._app.top_window().wrapper_object()
-            ret = main_wrapper != top_window_wrapper
-            return ret
-
-        except (
-                findwindows.ElementNotFoundError,
-                timings.TimeoutError,
-                RuntimeError,
-        ) as e:
-            logger.exception("check pop dialog timeout, err: %s" % e)
-            return False
-
     def _get_grid(self, control_id: int):
         grid = self._main.child_window(
             control_id=control_id, class_name="CVirtualGridCtrl"
@@ -304,7 +212,7 @@ class THSTrader():
         grid.type_keys("^s", set_foreground=False)
         count = 10
         while count > 0:
-            if self.is_exist_pop_dialog():
+            if self._is_exist_pop_dialog():
                 if self._app.top_window().window(class_name="Static", title_re=".*输入验证码.*"):
                     file_path = "tmp.png"
                     self._app.top_window().window(
@@ -337,7 +245,7 @@ class THSTrader():
         self._app.top_window().type_keys("%{s}%{y}", set_foreground=False)
         # Wait until file save complete otherwise pandas can not find file
         self.wait(0.2)
-        if self.is_exist_pop_dialog():
+        if self._is_exist_pop_dialog():
             self._app.top_window().Button2.click()
             self.wait(0.2)
 
@@ -349,15 +257,31 @@ class THSTrader():
         """
         btn = self._app.top_window().child_window(control_id=control_id, class_name="Button")
         btn.click()
+        
+    def _is_exist_pop_dialog(self):
+        self.wait(1)  # wait dialog display
 
-    def _click_grid_by_row(self, row):
-        x = config.COMMON_GRID_LEFT_MARGIN
-        y = config.COMMON_GRID_FIRST_ROW_HEIGHT + config.COMMON_GRID_ROW_HEIGHT * row
+        try:
+            main_wrapper = self._main.wrapper_object()
+            top_window_wrapper = self._app.top_window().wrapper_object()
+            return main_wrapper != top_window_wrapper
+        except (findwindows.ElementNotFoundError, timings.TimeoutError, RuntimeError,) as e:
+            logger.exception("check pop dialog timeout, err: %s" % e)
+            return False
 
-        self._app.top_window().child_window(
-            control_id=config.COMMON_GRID_CONTROL_ID,
-            class_name="CVirtualGridCtrl",
-        ).click(coords=(x, y))
+    def trade(self, security, price, amount):
+        """
+        :param security: 股票id
+        :param price: 价格
+        :param amount: 数量
+        """
+        self._set_trade_params(security, price, amount)
+        self._submit_trade()
+        self._handle_pop_dialogs()
+
+    def buy(self, security, price, amount):
+        self._switch_left_menus(["买入[F1]"])
+        return self.trade(security, price, amount)
 
     def apply_stocks(self, stock_list):
 
@@ -392,6 +316,68 @@ class THSTrader():
             self.buy(stock_id, stock_price, apply_num)
             ret += "%s 申购成功， 申购数量: %s; " % (stock_name, apply_num)
             self.wait(1)
+
+        return ret
+
+    def apple_bonds(self, bonds):
+        """
+        申购可转债
+        """
+        price, amount = 100, 10000
+
+        if not bonds:
+            return "今日无可转债"
+
+        ret = ""
+        for bond_id in bonds:
+            try:
+                self.buy(bond_id, price, amount)
+                ret += "可转债: %s 申购成功;" % bond_id
+                self.wait(1)
+            except Exception as e:
+                logger.error("buy bond: %s failed, err: %s" % bond_id, e)
+                ret += "可转债: %s 申购失败;\n" % bond_id
+
+        return ret
+
+    def auto_ipo(self):
+        """
+        自动申购可转债和新股
+        """
+        ret = ""
+        stock_list = self.spider.get_today_stock()
+        bonds = self.spider.get_today_bond_list()
+        users = set()
+
+        for i in range(1, config.ACCOUNT_COUNT + 1):
+            set_foreground(self._main)
+            self.wait(1)
+
+            if config.ACCOUNT_COUNT > 1:
+                cnt = 0
+                while cnt < 3:
+                    key = '%%%s' % i
+                    self.wait(3)
+                    pywinauto.keyboard.send_keys(key)
+                    name = self._get_account_name()
+                    logger.info("press alt + %s to switch account to: %s" % (i, name))
+                    if name and name not in users:
+                        ret += name + "\n"
+                        users.add(name)
+                        break
+                    cnt += 1
+                else:
+                    logger.warning("swicth user %s failed", i)
+
+            logger.info("start apply bonds")
+            ret += self.apple_bonds(bonds) + "\n"
+            self.wait(1)
+
+            logger.info("start apply stocks")
+            ret += self.apply_stocks(stock_list) + "\n"
+            self.wait(1)
+
+            ret += '=' * 20 + "\n"
 
         return ret
 
