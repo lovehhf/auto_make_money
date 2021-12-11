@@ -50,6 +50,10 @@ def set_foreground(window):
         SetForegroundWindow(window.wrapper_object())  # bring to front
 
 
+def wait(seconds):
+    time.sleep(seconds)
+
+
 class THSTrader():
     def __init__(self, exe_path):
         super().__init__()
@@ -71,17 +75,14 @@ class THSTrader():
         """
         关闭提示窗口
         """
-        self.wait(1)
+        wait(1)
         for window in self._app.windows(class_name="#32770", visible_only=True):
             title = window.window_text()
             if title != config.TITLE:
                 logger.info("close " + title)
                 window.close()
-                self.wait(0.2)
-        self.wait(1)
-
-    def wait(self, seconds):
-        time.sleep(seconds)
+                wait(0.2)
+        wait(1)
 
     def _init_toolbar(self):
         """
@@ -109,7 +110,7 @@ class THSTrader():
         点击左侧菜单栏里面指定的按钮
         """
         self._get_left_menus_handle().get_item(path).click()
-        self.wait(sleep)
+        wait(sleep)
 
     @functools.lru_cache()
     def _get_left_menus_handle(self):
@@ -120,9 +121,7 @@ class THSTrader():
         while True:
             try:
                 # self._main.set_focus()
-                handle = self._main.child_window(
-                    control_id=0x81, class_name="SysTreeView32"
-                )
+                handle = self._main
 
                 if count <= 0:
                     return handle
@@ -143,7 +142,7 @@ class THSTrader():
         while self._is_exist_pop_dialog():
             pywinauto.keyboard.send_keys('{ENTER}')
             logger.info("exist_pop_dialog, press enter.")
-            self.wait(1)
+            wait(1)
             cnt += 1
             if cnt >= 3:
                 self._main.set_focus()
@@ -157,14 +156,14 @@ class THSTrader():
         self._type_edit_control_keys(config.TRADE_SECURITY_CONTROL_ID, code)
 
         # wait security input finish
-        self.wait(0.5)
+        wait(0.5)
 
         self._type_edit_control_keys(
             config.TRADE_PRICE_CONTROL_ID,
             round_price_by_code(price, code),
         )
 
-        self.wait(0.5)
+        wait(0.5)
         self._type_edit_control_keys(
             config.TRADE_AMOUNT_CONTROL_ID, str(int(amount))
         )
@@ -230,10 +229,10 @@ class THSTrader():
                         editor.type_keys(captcha_num)
                         self._app.top_window().set_focus()
                         pywinauto.keyboard.send_keys("{ENTER}")  # 模拟发送enter，点击确定
-                        self.wait(1)
+                        wait(1)
                 break
 
-            self.wait(1)
+            wait(1)
             count -= 1
 
         temp_path = tempfile.mktemp(suffix=".csv")
@@ -241,13 +240,13 @@ class THSTrader():
 
         # alt+s保存，alt+y替换已存在的文件
         self._app.top_window().Edit1.set_edit_text(temp_path)
-        self.wait(0.1)
+        wait(0.1)
         self._app.top_window().type_keys("%{s}%{y}", set_foreground=False)
         # Wait until file save complete otherwise pandas can not find file
-        self.wait(0.2)
+        wait(0.2)
         if self._is_exist_pop_dialog():
             self._app.top_window().Button2.click()
-            self.wait(0.2)
+            wait(0.2)
 
         return self._format_grid_data(temp_path)
 
@@ -257,9 +256,9 @@ class THSTrader():
         """
         btn = self._app.top_window().child_window(control_id=control_id, class_name="Button")
         btn.click()
-        
+
     def _is_exist_pop_dialog(self):
-        self.wait(1)  # wait dialog display
+        wait(1)  # wait dialog display
 
         try:
             main_wrapper = self._main.wrapper_object()
@@ -298,24 +297,24 @@ class THSTrader():
             stock_name = stock['name']
             stock_price = stock['price']
             self._type_edit_control_keys(control_id=config.TRADE_SECURITY_CONTROL_ID, text=stock_id)
-            self.wait(1)
+            wait(1)
 
             apply_num = self._main.child_window(control_id=0x3FA, class_name="Static").window_text()
             if not apply_num or int(apply_num) == 0:
                 set_foreground(self._main)
                 self._main.child_window(control_id=config.TRADE_REFILL_CONTRON_ID, class_name="Button").click()
-                self.wait(1)
+                wait(1)
                 ret += "%s 可申购数量: %s; " % (stock_name, 0)
                 continue
 
             new_stocks.append([stock_id, stock_name, stock_price, apply_num])
-            self.wait(1)
+            wait(1)
 
         ret += '\n'
         for stock_id, stock_name, stock_price, apply_num in new_stocks:
             self.buy(stock_id, stock_price, apply_num)
             ret += "%s 申购成功， 申购数量: %s; " % (stock_name, apply_num)
-            self.wait(1)
+            wait(1)
 
         return ret
 
@@ -333,7 +332,7 @@ class THSTrader():
             try:
                 self.buy(bond_id, price, amount)
                 ret += "可转债: %s 申购成功;" % bond_id
-                self.wait(1)
+                wait(1)
             except Exception as e:
                 logger.error("buy bond: %s failed, err: %s" % bond_id, e)
                 ret += "可转债: %s 申购失败;\n" % bond_id
@@ -351,13 +350,13 @@ class THSTrader():
 
         for i in range(1, config.ACCOUNT_COUNT + 1):
             set_foreground(self._main)
-            self.wait(1)
+            wait(1)
 
             if config.ACCOUNT_COUNT > 1:
                 cnt = 0
                 while cnt < 3:
                     key = '%%%s' % i
-                    self.wait(3)
+                    wait(3)
                     pywinauto.keyboard.send_keys(key)
                     name = self._get_account_name()
                     logger.info("press alt + %s to switch account to: %s" % (i, name))
@@ -371,11 +370,11 @@ class THSTrader():
 
             logger.info("start apply bonds")
             ret += self.apple_bonds(bonds) + "\n"
-            self.wait(1)
+            wait(1)
 
             logger.info("start apply stocks")
             ret += self.apply_stocks(stock_list) + "\n"
-            self.wait(1)
+            wait(1)
 
             ret += '=' * 20 + "\n"
 
