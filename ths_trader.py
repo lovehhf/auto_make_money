@@ -120,8 +120,8 @@ class THSTrader():
         count = 2
         while True:
             try:
-                # self._main.set_focus()
-                handle = self._main
+                set_foreground(self._main)
+                handle = self._main.child_window(control_id=0x81, class_name="SysTreeView32")
 
                 if count <= 0:
                     return handle
@@ -334,7 +334,7 @@ class THSTrader():
                 ret += "可转债: %s 申购成功;" % bond_id
                 wait(1)
             except Exception as e:
-                logger.error("buy bond: %s failed, err: %s" % bond_id, e)
+                logger.error("buy bond: %s failed, err: %s" % (bond_id, e))
                 ret += "可转债: %s 申购失败;\n" % bond_id
 
         return ret

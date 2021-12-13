@@ -26,6 +26,7 @@ def buy_convert_bond():
         res = ths_trader.auto_ipo()
         push_message += str(res) + '\n'
     except Exception as e:
+        logger.error("auto_ipo failed, err: %s" % e)
         push_message += str(e)
     finally:
         if not is_test():
