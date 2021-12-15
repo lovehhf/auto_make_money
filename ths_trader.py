@@ -212,11 +212,10 @@ class THSTrader():
         count = 10
         while count > 0:
             if self._is_exist_pop_dialog():
-                if self._app.top_window().window(class_name="Static", title_re=".*输入验证码.*"):
+                if self._app.top_window().window(class_name="Static", title_re=".*输入验证码.*").exists():
                     file_path = "tmp.png"
-                    self._app.top_window().window(
-                        class_name="Static", control_id=0x965
-                    ).capture_as_image().save(file_path)
+                    self._app.top_window().window(class_name="Static", control_id=0x965).capture_as_image().save(
+                        file_path)
                     set_foreground(grid)
 
                     from utils.captcha import captcha_recognize
@@ -300,7 +299,7 @@ class THSTrader():
             wait(1)
 
             apply_num = self._main.child_window(control_id=0x3FA, class_name="Static").window_text()
-            if not apply_num or int(apply_num) == 0:
+            if not apply_num or float(apply_num) <= 100:
                 set_foreground(self._main)
                 self._main.child_window(control_id=config.TRADE_REFILL_CONTRON_ID, class_name="Button").click()
                 wait(1)
@@ -380,9 +379,14 @@ class THSTrader():
 
         return ret
 
+    def get_position(self):
+        self._switch_left_menus(["查询[F4]", "资金股票"])
+        return self._get_grid_data(config.COMMON_GRID_CONTROL_ID)
+
 
 if __name__ == '__main__':
     from config import ths_xiadan_path
 
     ths = THSTrader(ths_xiadan_path)
-    ths.auto_ipo()
+    # ths.auto_ipo()
+    print(ths.get_position())
